@@ -20,7 +20,20 @@ const config = {
 function readExcelFile() {
     const workbook = XLSX.readFile(EXCEL_FILE);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(sheet, { raw: false });
+    
+    // Log để debug
+    console.log('Sheet Range:', sheet['!ref']);
+    
+    // Đọc dữ liệu với header từ Excel
+    const data = XLSX.utils.sheet_to_json(sheet, { 
+        raw: false,
+        defval: '',
+        blankrows: false
+    });
+    
+    // Log dữ liệu để debug
+    console.log('Dữ liệu từ Excel:', JSON.stringify(data, null, 2));
+    
     return { workbook, sheet, data };
 }
 
@@ -28,20 +41,12 @@ function readExcelFile() {
 function updateExcelFile(workbook, rowIndex, status, logMessage) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     
-    // Đọc lại toàn bộ dữ liệu hiện tại
-    const currentData = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "" });
+    // Cập nhật trực tiếp các cell
+    const statusCell = XLSX.utils.encode_cell({r: rowIndex, c: 4}); // Cột E (Status)
+    const logCell = XLSX.utils.encode_cell({r: rowIndex, c: 5}); // Cột F (Log)
     
-    // Cập nhật Status và Log cho dòng cụ thể
-    currentData[rowIndex - 1].Status = status;
-    currentData[rowIndex - 1].Log = logMessage;
-    
-    // Tạo worksheet mới từ dữ liệu đã cập nhật
-    const newSheet = XLSX.utils.json_to_sheet(currentData, { 
-        header: ["Datetime", "Content", "Image", "Status", "Log"]
-    });
-    
-    // Cập nhật lại worksheet trong workbook
-    workbook.Sheets[workbook.SheetNames[0]] = newSheet;
+    sheet[statusCell] = { t: 's', v: status };
+    sheet[logCell] = { t: 's', v: logMessage };
     
     // Lưu file
     XLSX.writeFile(workbook, EXCEL_FILE, { bookType: 'xlsx' });
@@ -51,28 +56,51 @@ function updateExcelFile(workbook, rowIndex, status, logMessage) {
 
 // Hàm kiểm tra xem bài đăng có phải cho ngày hôm nay và đang pending
 function isPostForTodayAndPending(post) {
-    const today = moment().format('M/D/YYYY');
-    const postDateFormatted = moment(post.Datetime, 'M/D/YYYY').format('M/D/YYYY');
-    return today === postDateFormatted && post.Status === 'Pending';
+    // Log để debug
+    console.log('Kiểm tra post:', JSON.stringify(post, null, 2));
+    
+    if (!post.Datetime || !post.Type || !post.Status) {
+        console.log('Post không hợp lệ:', post);
+        return false;
+    }
+    
+    // Chuyển đổi ngày hiện tại sang định dạng M/D/YY
+    const today = moment().format('M/D/YY');
+    
+    // Chuyển đổi ngày từ post sang định dạng M/D/YY
+    const postDate = moment(post.Datetime, ['M/D/YY', 'M/D/YYYY']).format('M/D/YY');
+    
+    console.log('So sánh ngày:', {
+        today,
+        postDate,
+        postStatus: post.Status,
+        postType: post.Type
+    });
+    
+    const validTypes = ['post', 'surf'];
+    
+    return today === postDate && 
+           post.Status === 'Pending' && 
+           validTypes.includes(post.Type.toLowerCase());
 }
 
-// Hàm tạo điểm ngẫu nhiên trong viewport
+// Hàm tạo delay ngẫu nhiên
+function randomDelay(min, max) {
+    const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+    return new Promise(resolve => setTimeout(resolve, delay));
+}
+
+// Hàm lấy điểm ngẫu nhiên trên trang
 async function getRandomPoint(page) {
     const viewport = await page.evaluate(() => ({
-        width: window.innerWidth,
-        height: window.innerHeight
+        width: Math.max(document.documentElement.clientWidth, window.innerWidth || 0),
+        height: Math.max(document.documentElement.clientHeight, window.innerHeight || 0)
     }));
     
     return {
-        x: Math.floor(Math.random() * viewport.width),
-        y: Math.floor(Math.random() * viewport.height)
+        x: Math.floor(Math.random() * (viewport.width - 100)) + 50,
+        y: Math.floor(Math.random() * (viewport.height - 100)) + 50
     };
-}
-
-// Hàm delay ngẫu nhiên
-async function randomDelay(min, max) {
-    const delay = Math.floor(Math.random() * (max - min + 1)) + min;
-    await new Promise(resolve => setTimeout(resolve, delay));
 }
 
 // Hàm để hiển thị con trỏ chuột
@@ -218,6 +246,98 @@ async function createPost(page, cursor, content, imagePath = null) {
     }
 }
 
+// Hàm lướt Facebook
+async function surfFacebook(page, cursor, duration) {
+    try {
+        // Kiểm tra và chuẩn hóa thời gian
+        let validDuration = 60; // Mặc định 60 giây
+        
+        // Chuyển đổi duration thành số
+        const parsedDuration = parseInt(duration);
+        if (!isNaN(parsedDuration) && parsedDuration >= 30) {
+            validDuration = parsedDuration;
+        } else {
+            console.log(`Thời gian ${duration} không hợp lệ hoặc nhỏ hơn 30 giây, sử dụng mặc định 60 giây`);
+        }
+        
+        console.log(`Bắt đầu lướt Facebook trong ${validDuration} giây`);
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < validDuration * 1000) {
+            // Di chuyển chuột đến một điểm ngẫu nhiên trên trang
+            const randomPoint = await getRandomPoint(page);
+            await cursor.moveTo(randomPoint, {
+                moveDelay: 2000, // Tăng thời gian di chuyển
+                moveSpeed: 'slow' // Giảm tốc độ di chuyển
+            });
+            
+            // Cuộn trang một khoảng ngẫu nhiên nhỏ hơn
+            await page.evaluate(() => {
+                const scrollAmount = Math.random() * 300 + 100; // Giảm khoảng cuộn từ 100-400px
+                window.scrollBy(0, scrollAmount);
+            });
+            
+            // Tăng thời gian delay giữa các lần cuộn
+            await randomDelay(2500, 4000);
+            
+            // Thỉnh thoảng dừng lại lâu hơn để "đọc"
+            if (Math.random() < 0.2) { // 20% cơ hội dừng lại
+                console.log('Dừng lại để đọc...');
+                await randomDelay(4000, 6000);
+            }
+        }
+        
+        console.log('Đã hoàn thành lướt Facebook');
+        return { success: true };
+    } catch (error) {
+        console.error('Lỗi khi lướt Facebook:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function processRow(page, cursor, row, workbook, rowIndex) {
+    try {
+        const currentDate = new Date().toLocaleDateString('en-US');
+        const rowDate = new Date(row.Datetime).toLocaleDateString('en-US');
+        
+        if (rowDate === currentDate && row.Status === 'Pending') {
+            let result;
+            
+            // Kiểm tra và điều hướng về facebook.com
+            const currentUrl = await page.url();
+            if (!currentUrl.includes('facebook.com')) {
+                await page.goto('https://www.facebook.com');
+                await page.waitForSelector('[role="main"]');
+            }
+
+            switch (row.Type.toLowerCase()) {
+                case 'post':
+                    result = await createPost(page, cursor, row.Content, row.Image);
+                    break;
+                case 'surf':
+                    const duration = parseInt(row.Content) || 60; // Mặc định 60 giây nếu không hợp lệ
+                    result = await surfFacebook(page, cursor, duration);
+                    break;
+                default:
+                    console.log(`Không hỗ trợ loại ${row.Type}`);
+                    return;
+            }
+
+            const currentTime = moment().format('M/D/YYYY H:mm');
+            if (result.success) {
+                updateExcelFile(workbook, rowIndex + 1, 'Done', currentTime);
+            } else {
+                const errorLog = `Error at ${currentTime}: ${result.error}`;
+                updateExcelFile(workbook, rowIndex + 1, 'Error', errorLog);
+            }
+        }
+    } catch (error) {
+        console.error('Lỗi khi xử lý hàng:', error);
+        const errorTime = moment().format('M/D/YYYY H:mm');
+        updateExcelFile(workbook, rowIndex + 1, 'Error', `Error at ${errorTime}: ${error.message}`);
+    }
+}
+
 // Hàm chính
 (async () => {
     let browser;
@@ -283,30 +403,9 @@ async function createPost(page, cursor, content, imagePath = null) {
         for (let i = 0; i < data.length; i++) {
             const post = data[i];
             if (isPostForTodayAndPending(post)) {
-                console.log('Đang xử lý bài đăng:', post.Content);
-                
-                // Kiểm tra lại URL trước mỗi lần đăng để đảm bảo vẫn ở Facebook
-                const currentUrl = await page.url();
-                if (!currentUrl.includes('facebook.com')) {
-                    console.log('Đang điều hướng về Facebook...');
-                    await page.goto(FB_URL, { waitUntil: 'networkidle0' });
-                    await randomDelay(3000, 5000);
-                }
-                
-                const result = await createPost(page, cursor, post.Content, post.Image || null);
-                
-                // Cập nhật trạng thái và log
-                const currentTime = moment().format('M/D/YYYY H:mm');
-                if (result.success) {
-                    updateExcelFile(workbook, i + 1, 'Done', currentTime);
-                    console.log('Đã cập nhật trạng thái và log:', currentTime);
-                } else {
-                    const errorLog = `Error at ${currentTime}: ${result.error}`;
-                    updateExcelFile(workbook, i + 1, 'Error', errorLog);
-                    console.log('Đã cập nhật lỗi:', errorLog);
-                }
-                
-                await randomDelay(5000, 10000); // Đợi giữa các bài đăng
+                console.log(`Đang xử lý hành động ${post.Type}: ${post.Content}`);
+                await processRow(page, cursor, post, workbook, i);
+                await randomDelay(5000, 10000); // Đợi giữa các hành động
             }
         }
 
