@@ -1,0 +1,21 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.keypressDelay = exports.isWhitespace = exports.isUpperCase = exports.isTermination = exports.isPunctuation = exports.isNumeric = exports.isLowerCase = exports.isCadence = exports.isAlpha = exports.getProximateChar = exports.PROXIMATE_CHARS = void 0;
+const tslib_1 = require("tslib");
+tslib_1.__exportStar(require("./actions"), exports);
+var constants_1 = require("./constants");
+Object.defineProperty(exports, "PROXIMATE_CHARS", { enumerable: true, get: function () { return constants_1.PROXIMATE_CHARS; } });
+tslib_1.__exportStar(require("./schemas/options"), exports);
+var support_1 = require("./support");
+Object.defineProperty(exports, "getProximateChar", { enumerable: true, get: function () { return support_1.getProximateChar; } });
+Object.defineProperty(exports, "isAlpha", { enumerable: true, get: function () { return support_1.isAlpha; } });
+Object.defineProperty(exports, "isCadence", { enumerable: true, get: function () { return support_1.isCadence; } });
+Object.defineProperty(exports, "isLowerCase", { enumerable: true, get: function () { return support_1.isLowerCase; } });
+Object.defineProperty(exports, "isNumeric", { enumerable: true, get: function () { return support_1.isNumeric; } });
+Object.defineProperty(exports, "isPunctuation", { enumerable: true, get: function () { return support_1.isPunctuation; } });
+Object.defineProperty(exports, "isTermination", { enumerable: true, get: function () { return support_1.isTermination; } });
+Object.defineProperty(exports, "isUpperCase", { enumerable: true, get: function () { return support_1.isUpperCase; } });
+Object.defineProperty(exports, "isWhitespace", { enumerable: true, get: function () { return support_1.isWhitespace; } });
+Object.defineProperty(exports, "keypressDelay", { enumerable: true, get: function () { return support_1.keypressDelay; } });
+tslib_1.__exportStar(require("./types"), exports);
+//# sourceMappingURL=index.js.map

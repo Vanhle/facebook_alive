@@ -1,0 +1,1 @@
+{"version":3,"file":"delays.js","sourceRoot":"","sources":["../../src/constants/delays.ts"],"names":[],"mappings":";;;AAAa,QAAA,mBAAmB,GAAW,CAAC,CAAA;AAC/B,QAAA,mBAAmB,GAAW,EAAE,CAAA","sourcesContent":["export const KEY_PRESS_MIN_DELAY: number = 5\nexport const KEY_PRESS_MAX_DELAY: number = 15\n"]}

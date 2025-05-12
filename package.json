@@ -1,0 +1,18 @@
+{
+  "name": "fb-automation",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@forad/puppeteer-humanize": "^1.1.8",
+    "ghost-cursor": "latest",
+    "gologin": "latest",
+    "puppeteer-core": "latest"
+  }
+}
