@@ -13,6 +13,8 @@
     "@forad/puppeteer-humanize": "^1.1.8",
     "ghost-cursor": "latest",
     "gologin": "latest",
-    "puppeteer-core": "latest"
+    "moment": "^2.30.1",
+    "puppeteer-core": "latest",
+    "xlsx": "^0.18.5"
   }
 }

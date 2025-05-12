@@ -1,11 +1,55 @@
 import GoLogin from 'gologin';
 import puppeteer from 'puppeteer-core';
 import { createCursor } from 'ghost-cursor';
+import XLSX from 'xlsx';
+import moment from 'moment';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const EXCEL_FILE = 'materials/script.xlsx';
+const FB_URL = 'https://www.facebook.com';
 
 const config = {
     token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ODIxODdmODdlNDYwYzE0NDhkOTdlZjIiLCJ0eXBlIjoiZGV2Iiwiand0aWQiOiI2ODIxYTAzYjhlNTQ1NTJkNTE4NGQxODcifQ.VIkUirhAhp2MjVhbBup8XLqqsS4wkSfZRcel0qF8LHQ',
     profile_id: '67c803048a8f4f9417d8ba90'
 };
+
+// Hàm đọc dữ liệu từ file Excel
+function readExcelFile() {
+    const workbook = XLSX.readFile(EXCEL_FILE);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(sheet, { raw: false });
+    return { workbook, sheet, data };
+}
+
+// Hàm cập nhật trạng thái và log trong file Excel
+function updateExcelFile(workbook, rowIndex, status, logMessage) {
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    
+    // Cập nhật Status
+    const statusCell = XLSX.utils.encode_cell({ r: rowIndex, c: 3 }); // Cột D (Status)
+    if (!sheet[statusCell]) sheet[statusCell] = {};
+    sheet[statusCell].t = 's';
+    sheet[statusCell].v = status;
+
+    // Cập nhật Log
+    const logCell = XLSX.utils.encode_cell({ r: rowIndex, c: 4 }); // Cột E (Log)
+    if (!sheet[logCell]) sheet[logCell] = {};
+    sheet[logCell].t = 's';
+    sheet[logCell].v = logMessage;
+
+    // Lưu file
+    XLSX.writeFile(workbook, EXCEL_FILE);
+}
+
+// Hàm kiểm tra xem bài đăng có phải cho ngày hôm nay và đang pending
+function isPostForTodayAndPending(post) {
+    const today = moment().format('M/D/YYYY');
+    const postDateFormatted = moment(post.Datetime, 'M/D/YYYY').format('M/D/YYYY');
+    return today === postDateFormatted && post.Status === 'Pending';
+}
 
 // Hàm tạo điểm ngẫu nhiên trong viewport
 async function getRandomPoint(page) {
@@ -28,7 +72,6 @@ async function randomDelay(min, max) {
 
 // Hàm để hiển thị con trỏ chuột
 async function installMouseHelper(page) {
-    // Inject CSS
     await page.evaluate(() => {
         const style = document.createElement('style');
         style.innerHTML = `
@@ -47,37 +90,23 @@ async function installMouseHelper(page) {
                 transition: background-color 0.2s ease;
                 z-index: 999999;
             }
-            .mouse-helper.button-1 {
-                background-color: rgba(0, 0, 0, 0.8);
-            }
-            .mouse-helper.button-2 {
-                background-color: rgba(0, 0, 255, 0.8);
-            }
-            .mouse-helper.button-3 {
-                background-color: rgba(255, 0, 0, 0.8);
-            }
-            .mouse-helper.button-4 {
-                background-color: rgba(0, 255, 0, 0.8);
-            }
-            .mouse-helper.button-5 {
-                background-color: rgba(255, 0, 255, 0.8);
-            }
+            .mouse-helper.button-1 { background-color: rgba(0, 0, 0, 0.8); }
+            .mouse-helper.button-2 { background-color: rgba(0, 0, 255, 0.8); }
+            .mouse-helper.button-3 { background-color: rgba(255, 0, 0, 0.8); }
+            .mouse-helper.button-4 { background-color: rgba(0, 255, 0, 0.8); }
+            .mouse-helper.button-5 { background-color: rgba(255, 0, 255, 0.8); }
         `;
         document.head.appendChild(style);
-
-        // Tạo element cho con trỏ chuột
         const box = document.createElement('div');
         box.classList.add('mouse-helper');
         document.body.appendChild(box);
 
-        // Cập nhật vị trí con trỏ
         window.addEventListener('mousemove', event => {
             box.style.left = event.pageX + 'px';
             box.style.top = event.pageY + 'px';
             event.stopPropagation();
         }, true);
 
-        // Hiệu ứng khi click
         window.addEventListener('mousedown', event => {
             box.classList.add('button-' + event.which);
             event.stopPropagation();
@@ -87,7 +116,6 @@ async function installMouseHelper(page) {
             event.stopPropagation();
         }, true);
 
-        // Đảm bảo con trỏ luôn hiển thị
         const observer = new MutationObserver(() => {
             if (!document.querySelector('.mouse-helper')) {
                 document.body.appendChild(box);
@@ -99,11 +127,109 @@ async function installMouseHelper(page) {
     });
 }
 
-(async () => {
-    const GL = new GoLogin(config);
-    let browser;
-    
+// Hàm đăng bài với nội dung và ảnh
+async function createPost(page, cursor, content, imagePath = null) {
     try {
+        // Click để mở popup
+        await cursor.moveTo({
+            x: 750,
+            y: 105
+        }, {
+            moveSpeed: 'natural',
+            moveDelay: 1500,
+            randomizeMoveDelay: true
+        });
+
+        await cursor.click(undefined, {
+            moveDelay: 1000,
+            hesitate: 500,
+            waitForClick: 200,
+            clickCount: 1,
+            moveSpeed: 'natural'
+        });
+
+        console.log('Đã mở popup đăng bài');
+        await randomDelay(1000, 2000);
+
+        // Nhập nội dung
+        const textareaSelector = 'div[contenteditable="true"][role="textbox"]';
+        await page.waitForSelector(textareaSelector);
+        
+        const textareaElement = await page.$(textareaSelector);
+        const textareaBox = await textareaElement.boundingBox();
+        await cursor.moveTo({
+            x: textareaBox.x + textareaBox.width / 2,
+            y: textareaBox.y + textareaBox.height / 2
+        });
+        
+        await cursor.click();
+        await page.keyboard.type(content, { delay: 100 });
+
+        // Nếu có ảnh, thêm ảnh vào bài đăng
+        if (imagePath) {
+            console.log('Đang thêm ảnh:', imagePath);
+            
+            // Click nút thêm ảnh/video
+            const mediaButtonSelector = 'div[aria-label="Ảnh/video"]';
+            await page.waitForSelector(mediaButtonSelector);
+            const mediaButton = await page.$(mediaButtonSelector);
+            const mediaButtonBox = await mediaButton.boundingBox();
+            
+            await cursor.moveTo({
+                x: mediaButtonBox.x + mediaButtonBox.width / 2,
+                y: mediaButtonBox.y + mediaButtonBox.height / 2
+            });
+            await cursor.click();
+            
+            // Đợi input file xuất hiện và upload ảnh
+            const fileInput = await page.waitForSelector('input[type="file"]');
+            await fileInput.uploadFile(imagePath);
+            
+            // Đợi ảnh tải lên
+            await randomDelay(2000, 3000);
+        }
+
+        // Click nút đăng
+        const postButtonSelector = 'div[aria-label="Đăng"]';
+        await page.waitForSelector(postButtonSelector);
+        
+        const postButton = await page.$(postButtonSelector);
+        const postButtonBox = await postButton.boundingBox();
+        
+        await cursor.moveTo({
+            x: postButtonBox.x + postButtonBox.width / 2,
+            y: postButtonBox.y + postButtonBox.height / 2
+        });
+        
+        await cursor.click();
+        console.log('Đã đăng bài thành công');
+        
+        // Đợi bài đăng được xử lý
+        await randomDelay(3000, 5000);
+        return { success: true };
+    } catch (error) {
+        console.error('Lỗi khi đăng bài:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Hàm chính
+(async () => {
+    let browser;
+    const GL = new GoLogin(config);
+
+    try {
+        // Đọc dữ liệu từ Excel
+        const { workbook, data } = readExcelFile();
+        const todayPendingPosts = data.filter(post => isPostForTodayAndPending(post));
+
+        if (todayPendingPosts.length === 0) {
+            console.log('Không có bài đăng pending nào cho ngày hôm nay');
+            return;
+        }
+
+        console.log(`Có ${todayPendingPosts.length} bài đăng pending cần xử lý cho ngày hôm nay`);
+
         const { status, wsUrl } = await GL.start().catch((e) => {
             console.error(e);
             return { status: 'failure' };
@@ -124,14 +250,19 @@ async function installMouseHelper(page) {
         const pages = await browser.pages();
         const page = pages[0];
 
-        // Cài đặt helper hiển thị con trỏ chuột
+        // Kiểm tra và điều hướng về Facebook nếu cần
+        const currentUrl = await page.url();
+        if (!currentUrl.includes('facebook.com')) {
+            console.log('Đang điều hướng về Facebook...');
+            await page.goto(FB_URL, { waitUntil: 'networkidle0' });
+            await randomDelay(3000, 5000);
+        }
+
         await installMouseHelper(page);
         console.log('Đã kích hoạt hiển thị con trỏ chuột');
 
-        // Đợi trang load xong
         await new Promise(resolve => setTimeout(resolve, 5000));
 
-        // Cấu hình ghost cursor với các tùy chọn nâng cao
         const cursor = createCursor(page, {
             start: { x: 0, y: 0 },
             performRandomMoves: true,
@@ -143,88 +274,43 @@ async function installMouseHelper(page) {
             }
         });
 
-        // Thực hiện một số chuyển động ngẫu nhiên trước khi click
-        await cursor.toggleRandomMove(true);
-        
-        // Di chuyển đến một điểm ngẫu nhiên trên trang
-        const randomPoint = await getRandomPoint(page);
-        await cursor.moveTo(randomPoint, {
-            moveSpeed: 'natural',
-            moveDelay: 1000,
-            randomizeMoveDelay: true
-        });
-        
-        // Di chuyển đến vị trí mục tiêu với các tùy chọn tự nhiên
-        await cursor.moveTo({
-            x: 750,
-            y: 105
-        }, {
-            moveSpeed: 'natural',
-            moveDelay: 1500,
-            randomizeMoveDelay: true
-        });
+        // Xử lý từng bài đăng
+        for (let i = 0; i < data.length; i++) {
+            const post = data[i];
+            if (isPostForTodayAndPending(post)) {
+                console.log('Đang xử lý bài đăng:', post.Content);
+                
+                // Kiểm tra lại URL trước mỗi lần đăng để đảm bảo vẫn ở Facebook
+                const currentUrl = await page.url();
+                if (!currentUrl.includes('facebook.com')) {
+                    console.log('Đang điều hướng về Facebook...');
+                    await page.goto(FB_URL, { waitUntil: 'networkidle0' });
+                    await randomDelay(3000, 5000);
+                }
+                
+                const result = await createPost(page, cursor, post.Content, post.Image || null);
+                
+                // Cập nhật trạng thái và log
+                const currentTime = moment().format('M/D/YYYY H:mm');
+                if (result.success) {
+                    updateExcelFile(workbook, i + 1, 'Done', currentTime);
+                    console.log('Đã cập nhật trạng thái và log:', currentTime);
+                } else {
+                    const errorLog = `Error at ${currentTime}: ${result.error}`;
+                    updateExcelFile(workbook, i + 1, 'Error', errorLog);
+                    console.log('Đã cập nhật lỗi:', errorLog);
+                }
+                
+                await randomDelay(5000, 10000); // Đợi giữa các bài đăng
+            }
+        }
 
-        // Click để mở popup
-        await cursor.click(undefined, {
-            moveDelay: 1000,
-            hesitate: 500,
-            waitForClick: 200,
-            clickCount: 1,
-            moveSpeed: 'natural'
-        });
-
-        console.log('Đã click vào vị trí "Bạn đang nghĩ gì" với chuyển động tự nhiên');
-
-        // Đợi popup xuất hiện
-        await randomDelay(1000, 2000);
-
-        // Tìm và focus vào textarea để nhập nội dung
-        const textareaSelector = 'div[contenteditable="true"][role="textbox"]';
-        await page.waitForSelector(textareaSelector);
-        
-        // Di chuyển chuột đến textarea
-        const textareaElement = await page.$(textareaSelector);
-        const textareaBox = await textareaElement.boundingBox();
-        await cursor.moveTo({
-            x: textareaBox.x + textareaBox.width / 2,
-            y: textareaBox.y + textareaBox.height / 2
-        });
-        
-        // Click vào textarea
-        await cursor.click();
-        
-        // Gõ nội dung với tốc độ tự nhiên
-        const content = "Hiii everyone";
-        await page.keyboard.type(content, { delay: 100 });
-
-        await randomDelay(1000, 2000);
-
-        // Tìm và click nút đăng
-        const postButtonSelector = 'div[aria-label="Đăng"]';
-        await page.waitForSelector(postButtonSelector);
-        
-        const postButton = await page.$(postButtonSelector);
-        const postButtonBox = await postButton.boundingBox();
-        
-        // Di chuyển đến nút đăng
-        await cursor.moveTo({
-            x: postButtonBox.x + postButtonBox.width / 2,
-            y: postButtonBox.y + postButtonBox.height / 2
-        });
-        
-        // Click nút đăng
-        await cursor.click();
-
-        console.log('Đã đăng bài viết thành công');
-        
-        // Đợi một chút để đảm bảo bài đăng được xử lý
-        await randomDelay(3000, 5000);
-        
     } catch (error) {
         console.error('Lỗi:', error);
     } finally {
         if (browser) {
             await browser.close();
+            console.log('Đã đóng trình duyệt');
         }
     }
 })();
