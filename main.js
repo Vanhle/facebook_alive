@@ -28,37 +28,74 @@ async function randomDelay(min, max) {
 
 // Hàm để hiển thị con trỏ chuột
 async function installMouseHelper(page) {
-    await page.evaluateOnNewDocument(() => {
+    // Inject CSS
+    await page.evaluate(() => {
+        const style = document.createElement('style');
+        style.innerHTML = `
+            .mouse-helper {
+                pointer-events: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 20px;
+                height: 20px;
+                background-color: rgba(0, 0, 0, 0.4);
+                border: 1px solid rgba(0, 0, 0, 0.8);
+                border-radius: 50%;
+                margin-left: -10px;
+                margin-top: -10px;
+                transition: background-color 0.2s ease;
+                z-index: 999999;
+            }
+            .mouse-helper.button-1 {
+                background-color: rgba(0, 0, 0, 0.8);
+            }
+            .mouse-helper.button-2 {
+                background-color: rgba(0, 0, 255, 0.8);
+            }
+            .mouse-helper.button-3 {
+                background-color: rgba(255, 0, 0, 0.8);
+            }
+            .mouse-helper.button-4 {
+                background-color: rgba(0, 255, 0, 0.8);
+            }
+            .mouse-helper.button-5 {
+                background-color: rgba(255, 0, 255, 0.8);
+            }
+        `;
+        document.head.appendChild(style);
+
         // Tạo element cho con trỏ chuột
         const box = document.createElement('div');
         box.classList.add('mouse-helper');
-        const styles = {
-            backgroundColor: 'rgba(0, 0, 0, 0.2)',
-            border: '1px solid rgba(0, 0, 0, 0.8)',
-            borderRadius: '50%',
-            height: '20px',
-            width: '20px',
-            position: 'fixed',
-            pointerEvents: 'none',
-            transition: 'all 0.2s ease',
-            zIndex: '99999',
-        };
-        Object.assign(box.style, styles);
         document.body.appendChild(box);
 
-        // Theo dõi sự kiện chuột
-        document.addEventListener('mousemove', event => {
-            box.style.left = event.pageX - 10 + 'px';
-            box.style.top = event.pageY - 10 + 'px';
+        // Cập nhật vị trí con trỏ
+        window.addEventListener('mousemove', event => {
+            box.style.left = event.pageX + 'px';
+            box.style.top = event.pageY + 'px';
+            event.stopPropagation();
         }, true);
 
         // Hiệu ứng khi click
-        document.addEventListener('mousedown', () => {
-            box.style.backgroundColor = 'rgba(0, 0, 0, 0.4)';
+        window.addEventListener('mousedown', event => {
+            box.classList.add('button-' + event.which);
+            event.stopPropagation();
         }, true);
-        document.addEventListener('mouseup', () => {
-            box.style.backgroundColor = 'rgba(0, 0, 0, 0.2)';
+        window.addEventListener('mouseup', event => {
+            box.classList.remove('button-' + event.which);
+            event.stopPropagation();
         }, true);
+
+        // Đảm bảo con trỏ luôn hiển thị
+        const observer = new MutationObserver(() => {
+            if (!document.querySelector('.mouse-helper')) {
+                document.body.appendChild(box);
+            }
+        });
+        observer.observe(document.body, {
+            childList: true
+        });
     });
 }
 
