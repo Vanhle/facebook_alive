@@ -28,20 +28,25 @@ function readExcelFile() {
 function updateExcelFile(workbook, rowIndex, status, logMessage) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     
-    // Cập nhật Status
-    const statusCell = XLSX.utils.encode_cell({ r: rowIndex, c: 3 }); // Cột D (Status)
-    if (!sheet[statusCell]) sheet[statusCell] = {};
-    sheet[statusCell].t = 's';
-    sheet[statusCell].v = status;
-
-    // Cập nhật Log
-    const logCell = XLSX.utils.encode_cell({ r: rowIndex, c: 4 }); // Cột E (Log)
-    if (!sheet[logCell]) sheet[logCell] = {};
-    sheet[logCell].t = 's';
-    sheet[logCell].v = logMessage;
-
+    // Đọc lại toàn bộ dữ liệu hiện tại
+    const currentData = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "" });
+    
+    // Cập nhật Status và Log cho dòng cụ thể
+    currentData[rowIndex - 1].Status = status;
+    currentData[rowIndex - 1].Log = logMessage;
+    
+    // Tạo worksheet mới từ dữ liệu đã cập nhật
+    const newSheet = XLSX.utils.json_to_sheet(currentData, { 
+        header: ["Datetime", "Content", "Image", "Status", "Log"]
+    });
+    
+    // Cập nhật lại worksheet trong workbook
+    workbook.Sheets[workbook.SheetNames[0]] = newSheet;
+    
     // Lưu file
-    XLSX.writeFile(workbook, EXCEL_FILE);
+    XLSX.writeFile(workbook, EXCEL_FILE, { bookType: 'xlsx' });
+    
+    console.log(`Đã cập nhật dòng ${rowIndex}: Status=${status}, Log=${logMessage}`);
 }
 
 // Hàm kiểm tra xem bài đăng có phải cho ngày hôm nay và đang pending
