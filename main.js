@@ -123,7 +123,8 @@ function isPostForTodayAndPending(post) {
     const isValidType = 
         normalizedType === 'post' || 
         normalizedType === 'surf' || 
-        normalizedType === 'like';
+        normalizedType === 'like' ||
+        normalizedType === 'comment';
     
     return today === postDate && 
            post.Status === 'Pending' && 
@@ -348,92 +349,267 @@ async function reactRandomPosts(page, cursor, targetReacts) {
         let reactsCompleted = 0;
         
         while (reactsCompleted < targetReacts) {
-            // Cuộn trang để tải thêm bài viết
-            await page.evaluate(() => {
-                const scrollAmount = Math.random() * 300 + 200;
-                window.scrollBy(0, scrollAmount);
-            });
-            
-            // Đợi để tải bài viết mới
-            await randomDelay(2000, 3000);
-            
-            // Tìm tất cả nút like/react chưa được nhấn
-            const reactButtons = await page.$$('div[aria-label="Thích"][role="button"]');
-            
-            for (const reactButton of reactButtons) {
-                // Kiểm tra xem đã đạt đủ số lượng react chưa
-                if (reactsCompleted >= targetReacts) break;
+            try {
+                // Cuộn lần 1
+                await page.evaluate(() => {
+                    window.scrollBy(0, Math.floor(Math.random() * 500) + 800);
+                });
+                await randomDelay(3000, 4000);
+
+                // Cuộn lần 2
+                await page.evaluate(() => {
+                    window.scrollBy(0, Math.floor(Math.random() * 500) + 800);
+                });
+                await randomDelay(3000, 4000);
+
+                // Tìm tất cả nút like/react chưa được nhấn
+                const reactButtons = await page.$$('div[aria-label="Thích"][role="button"]');
                 
-                // Tạo hành vi tự nhiên - chỉ react ~70% bài viết
-                if (Math.random() > 0.3) {
-                    // Kiểm tra xem nút react có hiển thị không
-                    const isVisible = await reactButton.isIntersectingViewport();
-                    if (isVisible) {
-                        try {
-                            // Di chuyển chuột đến nút react và hover
-                            const box = await reactButton.boundingBox();
-                            await cursor.moveTo({
-                                x: box.x + box.width / 2,
-                                y: box.y + box.height / 2
-                            }, {
-                                moveSpeed: 'natural',
-                                moveDelay: 1000
-                            });
+                for (const reactButton of reactButtons) {
+                    // Kiểm tra xem đã đạt đủ số lượng react chưa
+                    if (reactsCompleted >= targetReacts) break;
+                    
+                    // Tạo hành vi tự nhiên - chỉ react ~70% bài viết
+                    if (Math.random() > 0.3) {
+                        // Kiểm tra xem nút react có hiển thị không
+                        const isVisible = await reactButton.isIntersectingViewport();
+                        if (isVisible) {
+                            try {
+                                // Di chuyển chuột đến nút react và hover
+                                const box = await reactButton.boundingBox();
+                                await cursor.moveTo({
+                                    x: box.x + box.width / 2,
+                                    y: box.y + box.height / 2
+                                }, {
+                                    moveSpeed: 'natural',
+                                    moveDelay: 1000
+                                });
 
-                            // Đợi menu reaction xuất hiện
-                            await randomDelay(2000, 2500);
+                                // Đợi menu reaction xuất hiện
+                                await randomDelay(2000, 2500);
 
-                            // Tìm tất cả các nút reaction
-                            const reactions = await page.$$('div[role="button"][aria-label="Thích"], div[role="button"][aria-label="Yêu thích"], div[role="button"][aria-label="Thương thương"], div[role="button"][aria-label="Haha"], div[role="button"][aria-label="Wow"], div[role="button"][aria-label="Buồn"], div[role="button"][aria-label="Phẫn nộ"]');
+                                // Tìm tất cả các nút reaction
+                                const reactions = await page.$$('div[role="button"][aria-label="Thích"], div[role="button"][aria-label="Yêu thích"], div[role="button"][aria-label="Thương thương"], div[role="button"][aria-label="Haha"], div[role="button"][aria-label="Wow"], div[role="button"][aria-label="Buồn"], div[role="button"][aria-label="Phẫn nộ"]');
 
-                            if (reactions.length === 0) {
-                                console.log('Không tìm thấy các nút reaction, thực hiện like thông thường');
+                                if (reactions.length === 0) {
+                                    console.log('Không tìm thấy các nút reaction, thực hiện like thông thường');
+                                    await cursor.click();
+                                    reactsCompleted++;
+                                    continue;
+                                }
+
+                                // Chọn ngẫu nhiên một reaction
+                                const randomIndex = Math.floor(Math.random() * reactions.length);
+                                const selectedReaction = reactions[randomIndex];
+                                
+                                // Lấy tên reaction để log
+                                const reactionName = await page.evaluate(el => el.getAttribute('aria-label'), selectedReaction);
+                                
+                                // Di chuyển đến reaction đã chọn
+                                const reactionBox = await selectedReaction.boundingBox();
+                                await cursor.moveTo({
+                                    x: reactionBox.x + reactionBox.width / 2,
+                                    y: reactionBox.y + reactionBox.height / 2
+                                }, {
+                                    moveSpeed: 'natural',
+                                    moveDelay: 500
+                                });
+
+                                // Click vào reaction
                                 await cursor.click();
+                                
                                 reactsCompleted++;
+                                console.log(`Đã react ${reactsCompleted}/${targetReacts} bài viết với reaction: ${reactionName}`);
+
+                                // Cuộn thêm một đoạn sau khi react để tránh bài vừa react
+                                await page.evaluate(() => {
+                                    window.scrollBy(0, Math.floor(Math.random() * 300) + 500);
+                                });
+                                
+                                // Đợi một khoảng thời gian ngẫu nhiên trước khi tiếp tục
+                                await randomDelay(3000, 5000);
+                                break;
+                            } catch (error) {
+                                console.log('Lỗi khi xử lý reaction, thử bài viết tiếp theo:', error.message);
                                 continue;
                             }
-
-                            // Chọn ngẫu nhiên một reaction (để tự nhiên hơn)
-                            const randomIndex = Math.floor(Math.random() * reactions.length);
-                            const selectedReaction = reactions[randomIndex];
-                            
-                            // Lấy tên reaction để log
-                            const reactionName = await page.evaluate(el => el.getAttribute('aria-label'), selectedReaction);
-                            
-                            // Di chuyển đến reaction đã chọn
-                            const reactionBox = await selectedReaction.boundingBox();
-                            await cursor.moveTo({
-                                x: reactionBox.x + reactionBox.width / 2,
-                                y: reactionBox.y + reactionBox.height / 2
-                            }, {
-                                moveSpeed: 'natural',
-                                moveDelay: 500
-                            });
-
-                            // Click vào reaction
-                            await cursor.click();
-                            
-                            reactsCompleted++;
-                            console.log(`Đã react ${reactsCompleted}/${targetReacts} bài viết với reaction: ${reactionName}`);
-
-                            // Đợi một khoảng thời gian ngẫu nhiên trước khi tiếp tục
-                            await randomDelay(1500, 3000);
-                        } catch (error) {
-                            console.log('Lỗi khi xử lý reaction, thử bài viết tiếp theo:', error.message);
-                            continue;
                         }
                     }
                 }
+                
+                // Đợi một chút trước khi cuộn tiếp
+                await randomDelay(2000, 3000);
+            } catch (error) {
+                console.log('Lỗi trong vòng lặp chính:', error.message);
+                await randomDelay(2000, 3000);
             }
-            
-            // Đợi một chút trước khi cuộn tiếp
-            await randomDelay(2000, 4000);
         }
         
         console.log('Hoàn thành quá trình react bài viết');
         return { success: true };
     } catch (error) {
         console.error('Lỗi khi react bài viết:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Hàm comment bài viết thông minh
+async function commentRandomPosts(page, cursor, targetComments) {
+    try {
+        console.log(`Bắt đầu quá trình comment ${targetComments} bài viết`);
+        let commentsCompleted = 0;
+        let processedPosts = new Set(); // Lưu trữ các bài viết đã xử lý
+        
+        // Đọc danh sách comments từ file
+        const fs = await import('fs');
+        const path = await import('path');
+        const commentsPath = path.default.join(process.cwd(), 'materials', 'comments.json');
+        const commentsData = JSON.parse(fs.default.readFileSync(commentsPath, 'utf8'));
+        const comments = commentsData;
+        
+        while (commentsCompleted < targetComments) {
+            try {
+                // Cuộn lần 1
+                await page.evaluate(() => {
+                    window.scrollBy(0, Math.floor(Math.random() * 500) + 800);
+                });
+                await randomDelay(3000, 4000);
+
+                // Cuộn lần 2
+                await page.evaluate(() => {
+                    window.scrollBy(0, Math.floor(Math.random() * 500) + 800);
+                });
+                await randomDelay(3000, 4000);
+
+                // Tìm tất cả các nút bình luận với nhiều selector khác nhau
+                const commentButtons = await page.evaluate(() => {
+                    const selectors = [
+                        'div[aria-label="Viết bình luận"]',
+                        'div[aria-label="Comment"]',
+                        'div[aria-label="Bình luận"]',
+                        'div[role="button"]:has(> div > div > span:contains("Bình luận"))',
+                        'div[role="button"]:has(> div > div > span:contains("Comment"))'
+                    ];
+                    
+                    const elements = [];
+                    for (const selector of selectors) {
+                        try {
+                            const found = Array.from(document.querySelectorAll(selector));
+                            elements.push(...found);
+                        } catch (e) {
+                            continue;
+                        }
+                    }
+                    
+                    // Lọc các phần tử trùng lặp và không hợp lệ
+                    return Array.from(new Set(elements))
+                        .filter(el => {
+                            const style = window.getComputedStyle(el);
+                            const rect = el.getBoundingClientRect();
+                            return el.isConnected && 
+                                   style.display !== 'none' && 
+                                   style.visibility !== 'hidden' &&
+                                   rect.width > 0 &&
+                                   rect.height > 0;
+                        })
+                        .map(el => {
+                            const rect = el.getBoundingClientRect();
+                            return {
+                                x: rect.x,
+                                y: rect.y,
+                                width: rect.width,
+                                height: rect.height
+                            };
+                        });
+                });
+
+                console.log(`Tìm thấy ${commentButtons.length} nút bình luận`);
+                let foundNewPost = false;
+
+                for (const buttonRect of commentButtons) {
+                    if (commentsCompleted >= targetComments) break;
+
+                    try {
+                        // Kiểm tra xem nút có nằm trong viewport không
+                        const viewportHeight = await page.evaluate(() => window.innerHeight);
+                        if (buttonRect.y < 0 || buttonRect.y > viewportHeight) {
+                            continue;
+                        }
+
+                        // Di chuyển đến nút comment và click
+                        await cursor.moveTo({
+                            x: buttonRect.x + buttonRect.width / 2,
+                            y: buttonRect.y + buttonRect.height / 2
+                        }, {
+                            moveSpeed: 'natural',
+                            moveDelay: 1000
+                        });
+                        
+                        // Đợi một chút trước khi click
+                        await randomDelay(500, 1000);
+                        await cursor.click();
+                        await randomDelay(1500, 2000);
+
+                        // Kiểm tra xem ô input comment đã xuất hiện chưa
+                        const inputVisible = await page.evaluate(() => {
+                            const input = document.querySelector('div[contenteditable="true"][role="textbox"]');
+                            return input && window.getComputedStyle(input).display !== 'none';
+                        });
+
+                        if (!inputVisible) {
+                            console.log('Không tìm thấy ô input comment, thử bài viết tiếp theo');
+                            continue;
+                        }
+
+                        // Chọn ngẫu nhiên một comment
+                        const randomComment = comments[Math.floor(Math.random() * comments.length)].comment;
+
+                        // Nhập comment
+                        await page.keyboard.type(randomComment, { delay: 100 });
+                        await randomDelay(1000, 1500);
+
+                        // Nhấn Enter để gửi comment
+                        await page.keyboard.press('Enter');
+                        await randomDelay(2000, 3000);
+
+                        // Click vào một điểm ngẫu nhiên để đóng popup (nếu có)
+                        const randomX = Math.floor(Math.random() * 300);
+                        const randomY = Math.floor(Math.random() * 500);
+                        await cursor.moveTo({
+                            x: randomX,
+                            y: randomY
+                        }, {
+                            moveSpeed: 'natural',
+                            moveDelay: 1000
+                        });
+                        await cursor.click();
+                        await randomDelay(1500, 2000);
+
+                        commentsCompleted++;
+                        foundNewPost = true;
+
+                        console.log(`Đã comment ${commentsCompleted}/${targetComments} bài viết với nội dung: ${randomComment}`);
+                        await randomDelay(3000, 5000);
+                        break;
+                    } catch (error) {
+                        console.log('Lỗi khi xử lý nút comment:', error.message);
+                        continue;
+                    }
+                }
+
+                if (!foundNewPost) {
+                    await randomDelay(2000, 3000);
+                }
+            } catch (error) {
+                console.log('Lỗi trong vòng lặp chính:', error.message);
+                await randomDelay(2000, 3000);
+            }
+        }
+
+        console.log('Hoàn thành quá trình comment bài viết');
+        return { success: true };
+    } catch (error) {
+        console.error('Lỗi khi comment bài viết:', error);
         return { success: false, error: error.message };
     }
 }
@@ -464,6 +640,10 @@ async function processRow(page, cursor, row, workbook, rowIndex) {
 
         switch (postType) {
             case 'post':
+                // Điều hướng về trang chủ Facebook
+                console.log('Đang điều hướng về trang chủ Facebook...');
+                await page.goto('https://www.facebook.com', { waitUntil: 'networkidle0' });
+                await randomDelay(3000, 5000);
                 result = await createPost(page, cursor, postContent, postImage);
                 break;
             case 'surf':
@@ -471,6 +651,9 @@ async function processRow(page, cursor, row, workbook, rowIndex) {
                 break;
             case 'like':
                 result = await reactRandomPosts(page, cursor, parseInt(postContent));
+                break;
+            case 'comment':
+                result = await commentRandomPosts(page, cursor, parseInt(postContent));
                 break;
             default:
                 console.log(`Không hỗ trợ loại hành động: ${row.Type}`);
