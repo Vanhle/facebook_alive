@@ -70,18 +70,26 @@ function isPostForTodayAndPending(post) {
     // Chuyển đổi ngày từ post sang định dạng M/D/YY
     const postDate = moment(post.Datetime, ['M/D/YY', 'M/D/YYYY']).format('M/D/YY');
     
+    // Chuẩn hóa Type để kiểm tra
+    const normalizedType = post.Type.toLowerCase().trim();
+    
     console.log('So sánh ngày:', {
         today,
         postDate,
         postStatus: post.Status,
-        postType: post.Type
+        postType: post.Type,
+        normalizedType
     });
     
-    const validTypes = ['post', 'surf'];
+    // Kiểm tra Type một cách linh hoạt
+    const isValidType = 
+        normalizedType === 'post' || 
+        normalizedType === 'surf' || 
+        normalizedType === 'like';
     
     return today === postDate && 
            post.Status === 'Pending' && 
-           validTypes.includes(post.Type.toLowerCase());
+           isValidType;
 }
 
 // Hàm tạo delay ngẫu nhiên
@@ -295,41 +303,117 @@ async function surfFacebook(page, cursor, duration) {
     }
 }
 
+// Hàm like bài viết ngẫu nhiên
+async function likeRandomPosts(page, cursor, targetLikes) {
+    try {
+        console.log(`Bắt đầu quá trình like ${targetLikes} bài viết`);
+        let likesCompleted = 0;
+        
+        while (likesCompleted < targetLikes) {
+            // Cuộn trang để tải thêm bài viết
+            await page.evaluate(() => {
+                const scrollAmount = Math.random() * 300 + 200;
+                window.scrollBy(0, scrollAmount);
+            });
+            
+            // Đợi để tải bài viết mới
+            await randomDelay(2000, 3000);
+            
+            // Tìm tất cả nút like chưa được nhấn
+            const likeButtons = await page.$$('div[aria-label="Thích"][role="button"]');
+            
+            for (const likeButton of likeButtons) {
+                // Kiểm tra xem đã đạt đủ số lượng like chưa
+                if (likesCompleted >= targetLikes) break;
+                
+                // Tạo hành vi tự nhiên - chỉ like ~70% bài viết
+                if (Math.random() > 0.3) {
+                    // Kiểm tra xem nút like có hiển thị không
+                    const isVisible = await likeButton.isIntersectingViewport();
+                    if (isVisible) {
+                        // Di chuyển chuột đến nút like
+                        const box = await likeButton.boundingBox();
+                        await cursor.moveTo({
+                            x: box.x + box.width / 2,
+                            y: box.y + box.height / 2
+                        }, {
+                            moveSpeed: 'natural',
+                            moveDelay: 1000
+                        });
+                        
+                        // Thỉnh thoảng dừng lại để "đọc" bài viết
+                        if (Math.random() < 0.4) {
+                            await randomDelay(3000, 5000);
+                        }
+                        
+                        // Click like
+                        await cursor.click();
+                        likesCompleted++;
+                        console.log(`Đã like ${likesCompleted}/${targetLikes} bài viết`);
+                        
+                        // Đợi một khoảng thời gian ngẫu nhiên trước khi tiếp tục
+                        await randomDelay(1500, 3000);
+                    }
+                }
+            }
+            
+            // Đợi một chút trước khi cuộn tiếp
+            await randomDelay(2000, 4000);
+        }
+        
+        console.log('Hoàn thành quá trình like bài viết');
+        return { success: true };
+    } catch (error) {
+        console.error('Lỗi khi like bài viết:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 async function processRow(page, cursor, row, workbook, rowIndex) {
     try {
-        const currentDate = new Date().toLocaleDateString('en-US');
-        const rowDate = new Date(row.Datetime).toLocaleDateString('en-US');
-        
-        if (rowDate === currentDate && row.Status === 'Pending') {
-            let result;
-            
-            // Kiểm tra và điều hướng về facebook.com
-            const currentUrl = await page.url();
-            if (!currentUrl.includes('facebook.com')) {
-                await page.goto('https://www.facebook.com');
-                await page.waitForSelector('[role="main"]');
-            }
+        const postDate = row.Datetime;
+        const postType = row.Type.toLowerCase().trim(); // Chuẩn hóa Type
+        const postContent = row.Content;
+        const postImage = row.Image;
+        const postStatus = row.Status;
 
-            switch (row.Type.toLowerCase()) {
-                case 'post':
-                    result = await createPost(page, cursor, row.Content, row.Image);
-                    break;
-                case 'surf':
-                    const duration = parseInt(row.Content) || 60; // Mặc định 60 giây nếu không hợp lệ
-                    result = await surfFacebook(page, cursor, duration);
-                    break;
-                default:
-                    console.log(`Không hỗ trợ loại ${row.Type}`);
-                    return;
-            }
+        // Kiểm tra nếu đã xử lý
+        if (postStatus === 'Done') {
+            console.log('Dòng này đã được xử lý trước đó');
+            return;
+        }
 
-            const currentTime = moment().format('M/D/YYYY H:mm');
-            if (result.success) {
-                updateExcelFile(workbook, rowIndex + 1, 'Done', currentTime);
-            } else {
-                const errorLog = `Error at ${currentTime}: ${result.error}`;
-                updateExcelFile(workbook, rowIndex + 1, 'Error', errorLog);
-            }
+        console.log(`Đang xử lý dòng ${rowIndex + 1} - Type: ${row.Type} (normalized: ${postType})`);
+        let result;
+
+        // Kiểm tra và điều hướng về facebook.com nếu cần
+        const currentUrl = await page.url();
+        if (!currentUrl.includes('facebook.com')) {
+            await page.goto('https://www.facebook.com');
+            await page.waitForSelector('[role="main"]');
+        }
+
+        switch (postType) {
+            case 'post':
+                result = await createPost(page, cursor, postContent, postImage);
+                break;
+            case 'surf':
+                result = await surfFacebook(page, cursor, parseInt(postContent));
+                break;
+            case 'like':
+                result = await likeRandomPosts(page, cursor, parseInt(postContent));
+                break;
+            default:
+                console.log(`Không hỗ trợ loại hành động: ${row.Type}`);
+                return;
+        }
+
+        const currentTime = moment().format('M/D/YYYY H:mm');
+        if (result.success) {
+            updateExcelFile(workbook, rowIndex + 1, 'Done', currentTime);
+        } else {
+            const errorLog = `Error at ${currentTime}: ${result.error}`;
+            updateExcelFile(workbook, rowIndex + 1, 'Error', errorLog);
         }
     } catch (error) {
         console.error('Lỗi khi xử lý hàng:', error);
