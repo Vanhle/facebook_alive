@@ -18,17 +18,39 @@ const config = {
 
 // Hàm đọc dữ liệu từ file Excel
 function readExcelFile() {
-    const workbook = XLSX.readFile(EXCEL_FILE);
+    const workbook = XLSX.readFile(EXCEL_FILE, {
+        cellDates: true, // Đọc ngày dưới dạng đối tượng Date
+        dateNF: 'mm/dd/yy' // Định dạng ngày mặc định
+    });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     
     // Log để debug
     console.log('Sheet Range:', sheet['!ref']);
     
     // Đọc dữ liệu với header từ Excel
-    const data = XLSX.utils.sheet_to_json(sheet, { 
-        raw: false,
+    const rawData = XLSX.utils.sheet_to_json(sheet, { 
+        raw: false, // Không chuyển đổi giá trị
         defval: '',
-        blankrows: false
+        blankrows: false,
+        header: 1 // Sử dụng hàng đầu tiên làm header
+    });
+
+    // Xử lý và chuẩn hóa dữ liệu
+    const data = rawData.slice(1).map(row => {
+        // Lấy tên cột từ hàng header
+        const headers = rawData[0];
+        const rowData = {};
+        
+        headers.forEach((header, index) => {
+            if (header === 'Datetime' && row[index]) {
+                // Giữ nguyên giá trị gốc của cột Datetime
+                rowData[header] = row[index];
+            } else {
+                rowData[header] = row[index] || '';
+            }
+        });
+        
+        return rowData;
     });
     
     // Log dữ liệu để debug
@@ -41,15 +63,31 @@ function readExcelFile() {
 function updateExcelFile(workbook, rowIndex, status, logMessage) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     
-    // Cập nhật trực tiếp các cell
+    // Chỉ cập nhật cột Status (E) và Log (F)
     const statusCell = XLSX.utils.encode_cell({r: rowIndex, c: 4}); // Cột E (Status)
     const logCell = XLSX.utils.encode_cell({r: rowIndex, c: 5}); // Cột F (Log)
     
+    // Giữ nguyên các giá trị cũ của các cột khác
+    const oldCell = sheet[statusCell];
+    const oldStyle = oldCell ? oldCell.s : undefined;
+
+    // Cập nhật với style cũ (nếu có)
     sheet[statusCell] = { t: 's', v: status };
     sheet[logCell] = { t: 's', v: logMessage };
     
-    // Lưu file
-    XLSX.writeFile(workbook, EXCEL_FILE, { bookType: 'xlsx' });
+    if (oldStyle) {
+        sheet[statusCell].s = oldStyle;
+        sheet[logCell].s = oldStyle;
+    }
+    
+    // Lưu file với các cài đặt để giữ nguyên định dạng
+    XLSX.writeFile(workbook, EXCEL_FILE, { 
+        bookType: 'xlsx',
+        bookSST: false,
+        type: 'file',
+        cellStyles: true,
+        compression: true
+    });
     
     console.log(`Đã cập nhật dòng ${rowIndex}: Status=${status}, Log=${logMessage}`);
 }
