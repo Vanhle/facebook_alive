@@ -303,13 +303,13 @@ async function surfFacebook(page, cursor, duration) {
     }
 }
 
-// Hàm like bài viết ngẫu nhiên
-async function likeRandomPosts(page, cursor, targetLikes) {
+// Hàm react bài viết thông minh
+async function reactRandomPosts(page, cursor, targetReacts) {
     try {
-        console.log(`Bắt đầu quá trình like ${targetLikes} bài viết`);
-        let likesCompleted = 0;
+        console.log(`Bắt đầu quá trình react ${targetReacts} bài viết`);
+        let reactsCompleted = 0;
         
-        while (likesCompleted < targetLikes) {
+        while (reactsCompleted < targetReacts) {
             // Cuộn trang để tải thêm bài viết
             await page.evaluate(() => {
                 const scrollAmount = Math.random() * 300 + 200;
@@ -319,40 +319,71 @@ async function likeRandomPosts(page, cursor, targetLikes) {
             // Đợi để tải bài viết mới
             await randomDelay(2000, 3000);
             
-            // Tìm tất cả nút like chưa được nhấn
-            const likeButtons = await page.$$('div[aria-label="Thích"][role="button"]');
+            // Tìm tất cả nút like/react chưa được nhấn
+            const reactButtons = await page.$$('div[aria-label="Thích"][role="button"]');
             
-            for (const likeButton of likeButtons) {
-                // Kiểm tra xem đã đạt đủ số lượng like chưa
-                if (likesCompleted >= targetLikes) break;
+            for (const reactButton of reactButtons) {
+                // Kiểm tra xem đã đạt đủ số lượng react chưa
+                if (reactsCompleted >= targetReacts) break;
                 
-                // Tạo hành vi tự nhiên - chỉ like ~70% bài viết
+                // Tạo hành vi tự nhiên - chỉ react ~70% bài viết
                 if (Math.random() > 0.3) {
-                    // Kiểm tra xem nút like có hiển thị không
-                    const isVisible = await likeButton.isIntersectingViewport();
+                    // Kiểm tra xem nút react có hiển thị không
+                    const isVisible = await reactButton.isIntersectingViewport();
                     if (isVisible) {
-                        // Di chuyển chuột đến nút like
-                        const box = await likeButton.boundingBox();
-                        await cursor.moveTo({
-                            x: box.x + box.width / 2,
-                            y: box.y + box.height / 2
-                        }, {
-                            moveSpeed: 'natural',
-                            moveDelay: 1000
-                        });
-                        
-                        // Thỉnh thoảng dừng lại để "đọc" bài viết
-                        if (Math.random() < 0.4) {
-                            await randomDelay(3000, 5000);
+                        try {
+                            // Di chuyển chuột đến nút react và hover
+                            const box = await reactButton.boundingBox();
+                            await cursor.moveTo({
+                                x: box.x + box.width / 2,
+                                y: box.y + box.height / 2
+                            }, {
+                                moveSpeed: 'natural',
+                                moveDelay: 1000
+                            });
+
+                            // Đợi menu reaction xuất hiện
+                            await randomDelay(2000, 2500);
+
+                            // Tìm tất cả các nút reaction
+                            const reactions = await page.$$('div[role="button"][aria-label="Thích"], div[role="button"][aria-label="Yêu thích"], div[role="button"][aria-label="Thương thương"], div[role="button"][aria-label="Haha"], div[role="button"][aria-label="Wow"], div[role="button"][aria-label="Buồn"], div[role="button"][aria-label="Phẫn nộ"]');
+
+                            if (reactions.length === 0) {
+                                console.log('Không tìm thấy các nút reaction, thực hiện like thông thường');
+                                await cursor.click();
+                                reactsCompleted++;
+                                continue;
+                            }
+
+                            // Chọn ngẫu nhiên một reaction (để tự nhiên hơn)
+                            const randomIndex = Math.floor(Math.random() * reactions.length);
+                            const selectedReaction = reactions[randomIndex];
+                            
+                            // Lấy tên reaction để log
+                            const reactionName = await page.evaluate(el => el.getAttribute('aria-label'), selectedReaction);
+                            
+                            // Di chuyển đến reaction đã chọn
+                            const reactionBox = await selectedReaction.boundingBox();
+                            await cursor.moveTo({
+                                x: reactionBox.x + reactionBox.width / 2,
+                                y: reactionBox.y + reactionBox.height / 2
+                            }, {
+                                moveSpeed: 'natural',
+                                moveDelay: 500
+                            });
+
+                            // Click vào reaction
+                            await cursor.click();
+                            
+                            reactsCompleted++;
+                            console.log(`Đã react ${reactsCompleted}/${targetReacts} bài viết với reaction: ${reactionName}`);
+
+                            // Đợi một khoảng thời gian ngẫu nhiên trước khi tiếp tục
+                            await randomDelay(1500, 3000);
+                        } catch (error) {
+                            console.log('Lỗi khi xử lý reaction, thử bài viết tiếp theo:', error.message);
+                            continue;
                         }
-                        
-                        // Click like
-                        await cursor.click();
-                        likesCompleted++;
-                        console.log(`Đã like ${likesCompleted}/${targetLikes} bài viết`);
-                        
-                        // Đợi một khoảng thời gian ngẫu nhiên trước khi tiếp tục
-                        await randomDelay(1500, 3000);
                     }
                 }
             }
@@ -361,10 +392,10 @@ async function likeRandomPosts(page, cursor, targetLikes) {
             await randomDelay(2000, 4000);
         }
         
-        console.log('Hoàn thành quá trình like bài viết');
+        console.log('Hoàn thành quá trình react bài viết');
         return { success: true };
     } catch (error) {
-        console.error('Lỗi khi like bài viết:', error);
+        console.error('Lỗi khi react bài viết:', error);
         return { success: false, error: error.message };
     }
 }
@@ -401,7 +432,7 @@ async function processRow(page, cursor, row, workbook, rowIndex) {
                 result = await surfFacebook(page, cursor, parseInt(postContent));
                 break;
             case 'like':
-                result = await likeRandomPosts(page, cursor, parseInt(postContent));
+                result = await reactRandomPosts(page, cursor, parseInt(postContent));
                 break;
             default:
                 console.log(`Không hỗ trợ loại hành động: ${row.Type}`);
